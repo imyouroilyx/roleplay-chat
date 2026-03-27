@@ -131,10 +131,16 @@ export default function ChatPage({ params }: { params: Promise<{ roomId: string 
 
   const handleSend = async () => {
     if (!input.trim()) return;
+    
+    // รีบเคลียร์ช่องพิมพ์ทันที ลดความหน่วง
+    const currentInput = input;
+    setInput('');
+    setShowEmoji(false);
+
     await fetch('/api/chat/send', {
       method: 'POST',
       body: JSON.stringify({
-        text: input, sender: nickname, color: textColor,
+        text: currentInput, sender: nickname, color: textColor,
         type: recipient === 'all' ? 'public' : 'whisper',
         recipient: recipient === 'all' ? null : recipient,
         roomId: safeRoomId, 
@@ -142,7 +148,6 @@ export default function ChatPage({ params }: { params: Promise<{ roomId: string 
         timestamp: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }),
       })
     });
-    setInput('');
   };
 
   const handleChangeName = async () => {
@@ -171,7 +176,6 @@ export default function ChatPage({ params }: { params: Promise<{ roomId: string 
     });
   };
 
-  // ดึงห้องสำหรับแผงแอดมิน
   const fetchRoomsAdmin = async () => {
     try {
       const res = await fetch('/api/admin/rooms');
@@ -191,7 +195,6 @@ export default function ChatPage({ params }: { params: Promise<{ roomId: string 
     fetchRoomsAdmin();
   };
 
-  // ดึงห้องสำหรับคนทั่วไปเวลาย้ายห้อง
   const openSwitchRoomModal = async () => {
     try {
       const res = await fetch('/api/rooms');
@@ -222,8 +225,6 @@ export default function ChatPage({ params }: { params: Promise<{ roomId: string 
       
       {/* Sidebar */}
       <aside className="w-full md:w-80 border-r border-neutral-900 flex flex-col px-6 py-4 bg-[#020202] z-10">
-        
-        {/* แก้ไข: เพิ่มขนาดอักษรและลด mb ให้ชิดขึ้น */}
         <div className="flex items-center gap-3 mb-4">
           <a href="https://roleplayth.com/index.php" target="_blank" rel="noopener noreferrer" className="hover:scale-110 transition-transform cursor-pointer z-50">
             <img src="https://iili.io/qQNVmS1.png" className="w-10 h-10" alt="Logo" />
@@ -272,7 +273,6 @@ export default function ChatPage({ params }: { params: Promise<{ roomId: string 
         </div>
 
         <div className="space-y-2">
-          {/* ปุ่มย้ายห้องสำหรับทุกคน */}
           <button onClick={openSwitchRoomModal} className="w-full bg-neutral-900/50 border border-neutral-800 p-3 font-bold text-[10px] uppercase rounded-lg hover:bg-neutral-800 transition-all text-neutral-300">
             ย้ายห้อง (Switch Room)
           </button>
@@ -287,7 +287,6 @@ export default function ChatPage({ params }: { params: Promise<{ roomId: string 
       {/* Main Area */}
       <main className="flex-1 flex flex-col relative bg-[#050505]">
         
-        {/* แก้ไข: ปรับขนาดฟอนต์ให้ใหญ่ขึ้น และชิดขึ้น */}
         <header className="px-6 py-4 border-b border-neutral-900 flex justify-between items-center text-sm font-bold text-neutral-600 uppercase tracking-widest">
           <span className="text-blue-500 text-base drop-shadow-[0_0_8px_rgba(59,130,246,0.6)]">D-VEN HOST CLUB</span>
           <span className="text-white">ห้อง: {decodeURIComponent(roomId)}</span>
@@ -299,7 +298,13 @@ export default function ChatPage({ params }: { params: Promise<{ roomId: string 
             if (msg.type === 'whisper' && msg.sender !== nickname && msg.recipient !== nickname) return null;
 
             return (
-              <motion.div initial={{ opacity: 0, x: -5 }} animate={{ opacity: 1, x: 0 }} key={idx} className="flex items-baseline gap-3 text-lg md:text-xl leading-snug">
+              <motion.div 
+                initial={{ opacity: 0, y: 5 }} 
+                animate={{ opacity: 1, y: 0 }} 
+                transition={{ duration: 0.15 }} 
+                key={idx} 
+                className="flex items-baseline gap-3 text-lg md:text-xl leading-snug"
+              >
                 <span className="text-neutral-900 text-[10px] font-mono">[{msg.timestamp}]</span>
                 <span className={`font-black whitespace-nowrap ${msg.isAdmin ? "bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent" : "text-neutral-600"}`}
                       style={msg.isAdmin ? { filter: 'drop-shadow(0 0 5px rgba(34, 211, 238, 0.4))' } : {}}>
@@ -333,7 +338,6 @@ export default function ChatPage({ params }: { params: Promise<{ roomId: string 
                   ))}
                 </div>
 
-                {/* ถ้าห้องปลายทางเป็น Private ให้กรอกรหัสผ่าน */}
                 <AnimatePresence>
                   {switchTargetRoom?.type === 'private' && (
                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
