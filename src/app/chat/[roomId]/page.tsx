@@ -26,11 +26,9 @@ export default function ChatPage({ params }: { params: Promise<{ roomId: string 
   const [newName, setNewName] = useState('');
   const [openUserMenu, setOpenUserMenu] = useState(false);
   
-  // สำหรับระบบแอดมิน (จัดการห้อง)
   const [roomList, setRoomList] = useState<Record<string, any>>({});
   const [newRoom, setNewRoom] = useState({ name: '', type: 'public', pass: '' });
 
-  // สำหรับระบบย้ายห้อง (ผู้ใช้ทั่วไป)
   const [allRooms, setAllRooms] = useState<{name: string, type: string}[]>([]);
   const [showSwitchRoom, setShowSwitchRoom] = useState(false);
   const [switchTargetRoom, setSwitchTargetRoom] = useState<{name: string, type: string} | null>(null);
@@ -119,6 +117,11 @@ export default function ChatPage({ params }: { params: Promise<{ roomId: string 
       }
     });
 
+    // ดักจับ Event ลบข้อความจากแอดมิน
+    channel.bind('delete-message', (data: { msgId: string }) => {
+      setMessages(prev => prev.filter(m => m.msgId !== data.msgId));
+    });
+
     return () => { pusher.disconnect(); };
   }, [roomId, safeRoomId]);
 
@@ -126,26 +129,51 @@ export default function ChatPage({ params }: { params: Promise<{ roomId: string 
     if (messages.length > 0) {
       sessionStorage.setItem(`chat_log_${safeRoomId}`, JSON.stringify(messages));
       scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
+
+      // ดักจับการโหลดรูปภาพ ถ้าโหลดเสร็จให้เตะ Scroll ลงไปล่างสุด
+      const container = document.getElementById('chat-container');
+      if (container) {
+        const imgs = container.getElementsByTagName('img');
+        for (let i = 0; i < imgs.length; i++) {
+          imgs[i].onload = () => scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }
+      }
     }
   }, [messages, safeRoomId]);
 
   const handleSend = async () => {
     if (!input.trim()) return;
     
-    // รีบเคลียร์ช่องพิมพ์ทันที ลดความหน่วง
     const currentInput = input;
     setInput('');
     setShowEmoji(false);
 
+    // สร้าง ID เฉพาะให้ข้อความ เพื่อใช้เวลาแอดมินต้องการลบ
+    const msgId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+
     await fetch('/api/chat/send', {
       method: 'POST',
       body: JSON.stringify({
+        msgId,
         text: currentInput, sender: nickname, color: textColor,
         type: recipient === 'all' ? 'public' : 'whisper',
         recipient: recipient === 'all' ? null : recipient,
         roomId: safeRoomId, 
         isAdmin,
         timestamp: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }),
+      })
+    });
+  };
+
+  // แอดมินกดลบข้อความ
+  const deleteMessage = async (msgId: string) => {
+    if (!confirm("ลบข้อความนี้ใช่หรือไม่?")) return;
+    await fetch('/api/chat/delete', {
+      method: 'POST',
+      body: JSON.stringify({
+        roomId: safeRoomId,
+        msgId,
+        adminPassword: localStorage.getItem('rp_admin_key')
       })
     });
   };
@@ -214,6 +242,9 @@ export default function ChatPage({ params }: { params: Promise<{ roomId: string 
       if (!res.ok) return alert("รหัสผ่านห้องส่วนตัวไม่ถูกต้อง!");
     }
     
+    // ล้างประวัติห้องเก่าที่ค้างอยู่ในเครื่องทิ้งไปเลย
+    sessionStorage.removeItem(`chat_log_${safeRoomId}`);
+    
     setShowSwitchRoom(false);
     setSwitchTargetRoom(null);
     setSwitchPass('');
@@ -223,7 +254,6 @@ export default function ChatPage({ params }: { params: Promise<{ roomId: string 
   return (
     <div className="flex h-screen bg-black text-white flex-col md:flex-row font-sans overflow-hidden">
       
-      {/* Sidebar */}
       <aside className="w-full md:w-80 border-r border-neutral-900 flex flex-col px-6 py-4 bg-[#020202] z-10">
         <div className="flex items-center gap-3 mb-4">
           <a href="https://roleplayth.com/index.php" target="_blank" rel="noopener noreferrer" className="hover:scale-110 transition-transform cursor-pointer z-50">
@@ -276,7 +306,6 @@ export default function ChatPage({ params }: { params: Promise<{ roomId: string 
           <button onClick={openSwitchRoomModal} className="w-full bg-neutral-900/50 border border-neutral-800 p-3 font-bold text-[10px] uppercase rounded-lg hover:bg-neutral-800 transition-all text-neutral-300">
             ย้ายห้อง (Switch Room)
           </button>
-
           {isAdmin && (
             <button onClick={() => { setShowAdminPanel(true); fetchRoomsAdmin(); }} className="w-full bg-blue-600/20 text-blue-400 border border-blue-500/50 p-3 font-black text-[10px] rounded-lg shadow-[0_0_15px_rgba(59,130,246,0.3)] hover:bg-blue-600 hover:text-white transition-all uppercase">Admin Tools</button>
           )}
@@ -284,7 +313,6 @@ export default function ChatPage({ params }: { params: Promise<{ roomId: string 
         </div>
       </aside>
 
-      {/* Main Area */}
       <main className="flex-1 flex flex-col relative bg-[#050505]">
         
         <header className="px-6 py-4 border-b border-neutral-900 flex justify-between items-center text-sm font-bold text-neutral-600 uppercase tracking-widest">
@@ -292,7 +320,7 @@ export default function ChatPage({ params }: { params: Promise<{ roomId: string 
           <span className="text-white">ห้อง: {decodeURIComponent(roomId)}</span>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-10 space-y-2 custom-scrollbar">
+        <div id="chat-container" className="flex-1 overflow-y-auto p-10 space-y-2 custom-scrollbar">
           {messages.map((msg, idx) => {
             if (msg.type === 'system') return <div key={idx} className="text-neutral-700 text-xs italic py-2 tracking-wide">{msg.text}</div>;
             if (msg.type === 'whisper' && msg.sender !== nickname && msg.recipient !== nickname) return null;
@@ -301,8 +329,8 @@ export default function ChatPage({ params }: { params: Promise<{ roomId: string 
               <motion.div 
                 initial={{ opacity: 0, y: 5 }} 
                 animate={{ opacity: 1, y: 0 }} 
-                transition={{ duration: 0.15 }} 
-                key={idx} 
+                transition={{ duration: 0.05 }} 
+                key={msg.msgId || idx} 
                 className="flex items-baseline gap-3 text-lg md:text-xl leading-snug"
               >
                 <span className="text-neutral-900 text-[10px] font-mono">[{msg.timestamp}]</span>
@@ -312,13 +340,19 @@ export default function ChatPage({ params }: { params: Promise<{ roomId: string 
                 </span>
                 <span className="font-medium" style={{ color: msg.color }} dangerouslySetInnerHTML={{ __html: parseBBCode(msg.text) }} />
                 {msg.type === 'whisper' && <span className="text-[9px] bg-red-600 text-white px-2 rounded font-black self-center ml-2">PRIVATE</span>}
+                
+                {/* ปุ่มลบสำหรับแอดมิน */}
+                {isAdmin && (
+                  <button onClick={() => deleteMessage(msg.msgId)} className="text-red-600 hover:text-red-400 text-[10px] font-bold ml-2 self-center opacity-50 hover:opacity-100 transition-opacity">
+                    [X]
+                  </button>
+                )}
               </motion.div>
             );
           })}
           <div ref={scrollRef} />
         </div>
 
-        {/* Modal: ย้ายห้อง (Switch Room) */}
         <AnimatePresence>
           {showSwitchRoom && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/90 z-[80] flex items-center justify-center p-6 backdrop-blur-sm">
@@ -359,7 +393,6 @@ export default function ChatPage({ params }: { params: Promise<{ roomId: string 
           )}
         </AnimatePresence>
 
-        {/* Modal: Admin Panel */}
         <AnimatePresence>
           {showAdminPanel && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/95 z-50 flex items-center justify-center p-6 backdrop-blur-md">
@@ -407,7 +440,6 @@ export default function ChatPage({ params }: { params: Promise<{ roomId: string 
           )}
         </AnimatePresence>
 
-        {/* Modal: เปลี่ยนชื่อดิสเพลย์ */}
         <AnimatePresence>
           {isChangingName && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/90 z-[70] flex items-center justify-center p-6 backdrop-blur-sm">
